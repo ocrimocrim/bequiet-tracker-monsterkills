@@ -2,8 +2,8 @@ name: Daily Monstercount
 
 on:
   schedule:
-    # ACHTUNG: GitHub Actions nutzt UTC.
-    # 23:58 Uhr Europa/Berlin = 21:58 UTC (Sommerzeit). Im Winter (CET) = 22:58 UTC.
+    # GitHub Actions läuft in UTC.
+    # 23:58 Uhr Europa/Berlin = 21:58 UTC (Sommerzeit). Im Winter: 22:58 UTC.
     - cron: "58 21 * * *"
   workflow_dispatch: {}
 
@@ -27,10 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run monstercount tracker (with debug)
+      - name: Run monstercount tracker
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TEST_MONSTERCOUNT: "true"    # einmalig zum Testen: schickt eine Testzeile
-          DEBUG_MONSTERCOUNT: "true"   # einmalig: schickt einen 🧪 DEBUG-Block mit Details
         run: |
           python monstercount_tracker.py
