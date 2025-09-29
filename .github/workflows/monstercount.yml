@@ -1,0 +1,41 @@
+name: Monstercount Daily
+
+on:
+  schedule:
+    - cron: "58 21 * * *"   # 23:58 Europe/Berlin = 21:58 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write   # damit state_monster.json committet werden kann
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monstercount tracker
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SEND_TEST_MESSAGE: "true"    # für den ersten manuellen Test; später auf "false" setzen
+        run: python monstercount_tracker.py
+
+      - name: Commit state_monster.json (if changed)
+        run: |
+          if [ -f state_monster.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state_monster.json || true
+            git diff --staged --quiet || git commit -m "Update state_monster.json"
+            git push
+          fi
