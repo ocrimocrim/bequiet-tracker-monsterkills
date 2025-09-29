@@ -2,162 +2,147 @@ import os
 import random
 import re
 import sys
-import time
 from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 
-# URLs
+# Seiten
 RANKING_URL = "https://pr-underworld.com/website/ranking/"
 MONSTER_URL = "https://pr-underworld.com/website/monstercount/"
 
-# Einstellungen
+# Settings
 GUILD_NAME = "beQuiet"
 TIMEOUT = 20
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_URL")
-TEXT_FILE = Path("texts_monsterkills.txt")  # dein Sprüche-File
-MAX_LINES = 25  # wie viele Zeilen ins Posting
+TEXT_FILE = Path("texts_monsterkills.txt")   # deine Sprüche-Datei
+MAX_LINES = 25                                # wie viele Zeilen im Ranking
+TEST_RUN = os.getenv("TEST_MONSTERCOUNT", "false").lower() == "true"  # Testlauf?
 
-# ---- Hilfsfunktionen ---------------------------------------------------------
+# ----------------- Helpers -----------------
 
-def _norm_name(s: str) -> str:
-    # Name-Vergleich robust: Kleinbuchstaben, mehrere Spaces zu einem
-    return re.sub(r"\s+", " ", s.strip().lower())
-
-def _next_netherworld_table(soup: BeautifulSoup):
-    """Finde die Tabelle direkt unter der Überschrift 'Netherworld:'."""
-    for h in soup.find_all(["h1","h2","h3","h4","h5","h6"]):
-        if h.get_text(strip=True).lower().startswith("netherworld"):
-            return h.find_next("table")
-    return None
-
-def _safe_int(txt: str, default=0) -> int:
-    m = re.findall(r"\d+", str(txt))
-    return int("".join(m)) if m else default
-
-def _load_random_line(path: Path) -> str:
+def pick_line(path: Path) -> str:
     try:
         lines = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
         return random.choice(lines) if lines else "Hunt well, hunt often."
     except Exception:
         return "Hunt well, hunt often."
 
-def _post_discord(content: str):
+def norm(s: str) -> str:
+    return re.sub(r"\s+", " ", s.strip().lower())
+
+def find_netherworld_table(soup: BeautifulSoup):
+    """Nimmt die Tabelle direkt unter der Überschrift 'Netherworld'."""
+    for h in soup.find_all(["h1","h2","h3","h4","h5","h6"]):
+        if h.get_text(strip=True).lower().startswith("netherworld"):
+            return h.find_next("table")
+    return None
+
+def post_discord(content: str):
     if not WEBHOOK:
-        print("Fehlende ENV DISCORD_WEBHOOK_URL – kein Discord-Post.", file=sys.stderr)
+        print("WARN: DISCORD_WEBHOOK_URL fehlt – kein Post zu Discord.")
+        print(content)
         return
-    r = requests.post(WEBHOOK, json={"content": content}, timeout=10)
+    r = requests.post(WEBHOOK, json={"content": content}, timeout=15)
     r.raise_for_status()
 
-# ---- Scraper -----------------------------------------------------------------
+# ----------------- Parsing -----------------
 
-def get_bequiet_names_from_ranking() -> set[str]:
-    """Liest die Netherworld-Rangliste und liefert alle Char-Namen der Gilde beQuiet."""
-    r = requests.get(RANKING_URL, timeout=TIMEOUT, headers={"User-Agent": "beQuiet monster tracker"})
+def load_bequiet_names_from_ranking() -> set[str]:
+    """Parst /ranking/ (Netherworld) und nimmt NUR beQuiet-Spieler.
+       Spalten laut deinem Beispiel: 0:pos(th), 1:icon, 2:name, 3:level, 4:jobimg, 5:percent, 6:guild"""
+    r = requests.get(RANKING_URL, timeout=TIMEOUT, headers={"User-Agent": "beQuiet monstercount"})
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    table = _next_netherworld_table(soup)
+    table = find_netherworld_table(soup)
     if not table:
-        print("Netherworld-Tabelle (Ranking) nicht gefunden.", file=sys.stderr)
+        print("Ranking: Netherworld-Tabelle nicht gefunden", file=sys.stderr)
         return set()
 
     names = set()
-    tbody = table.find("tbody")
-    if not tbody:
-        return names
-
+    tbody = table.find("tbody") or table
     for tr in tbody.find_all("tr"):
         tds = tr.find_all("td")
-        # Erwartetes Layout: 0=online icon, 1=Name, 2=Level, 3=Job img, 4=Exp%, 5=Guild (img + text)
-        # Manche Seiten haben 7 Spalten inkl. # => daher defensiv:
-        if len(tds) < 6:
+        if len(tds) < 7:
             continue
-
-        # Name steckt in Spalte mit Text; im Beispiel ist es tds[2] bei Level-Ranking-Seite.
-        # Aus Deinen HTML-Snippets: th#, td(online), td(name), td(level), td(job), td(exp), td(guild)
-        # => Name=tds[2], Guild=tds[6] (weil th zählt nicht in tds). Aber nicht überall gleich,
-        # deshalb versuchen wir, Name über die Spalte zu finden, die *kein* Bild enthält.
-        # Hier nutzen wir die Struktur aus deinen Beispielen:
-        try:
-            name = tds[2].get_text(strip=True)
-        except Exception:
-            continue
-
-        # Gildenspalte ist die letzte Textspalte
-        guild_text = tds[-1].get_text(" ", strip=True)
-
-        if GUILD_NAME.lower() in guild_text.lower():
-            names.add(_norm_name(name))
-
+        name = tds[2].get_text(strip=True)
+        guild = tds[6].get_text(" ", strip=True)
+        if GUILD_NAME.lower() in guild.lower():
+            names.add(norm(name))
     return names
 
-def get_netherworld_monstercount() -> list[tuple[str, int]]:
-    """Gibt Liste (name, kills) aus der Netherworld-Tabelle der Monstercount-Seite zurück."""
-    r = requests.get(MONSTER_URL, timeout=TIMEOUT, headers={"User-Agent": "beQuiet monster tracker"})
+def load_monstercount() -> list[tuple[str, int]]:
+    """Parst /monstercount/ (Netherworld).
+       Spalten laut deinem Beispiel: 0:name, 1:kills"""
+    r = requests.get(MONSTER_URL, timeout=TIMEOUT, headers={"User-Agent": "beQuiet monstercount"})
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    table = _next_netherworld_table(soup)
+    table = find_netherworld_table(soup)
     if not table:
-        print("Netherworld-Tabelle (Monstercount) nicht gefunden.", file=sys.stderr)
+        print("Monstercount: Netherworld-Tabelle nicht gefunden", file=sys.stderr)
         return []
 
-    res = []
-    tbody = table.find("tbody")
-    if not tbody:
-        return res
-
+    out = []
+    tbody = table.find("tbody") or table
     for tr in tbody.find_all("tr"):
         tds = tr.find_all("td")
         if len(tds) < 2:
             continue
-        name = tds[0].get_text(strip=True) if len(tds) == 2 else tds[1].get_text(strip=True)
-        kills_txt = tds[-1].get_text(strip=True)
-        kills = _safe_int(kills_txt, 0)
-        if name:
-            res.append((name, kills))
+        name = tds[0].get_text(strip=True)
+        kills_txt = tds[1].get_text(strip=True)
+        # nur Ziffern
+        m = re.findall(r"\d+", kills_txt)
+        kills = int("".join(m)) if m else 0
+        out.append((name, kills))
+    return out
 
-    return res
-
-# ---- Hauptlogik --------------------------------------------------------------
+# ----------------- Main -----------------
 
 def main():
-    bequiet_set = get_bequiet_names_from_ranking()
-    if not bequiet_set:
-        _post_discord("🧪 Testlauf (Monstercount): Keine beQuiet-Namen im Ranking gefunden.")
-        return
+    # 1) Spruch
+    line = pick_line(TEXT_FILE)
 
-    today = get_netherworld_monstercount()
-    # Filter auf beQuiet
-    filtered = [(n, k) for (n, k) in today if _norm_name(n) in bequiet_set and k > 0]
+    # 2) beQuiet-Spieler aus Ranking ziehen (Netherworld)
+    bequiet_names = load_bequiet_names_from_ranking()
+
+    # 3) Monstercount-Liste ziehen (Netherworld)
+    all_counts = load_monstercount()
+
+    # 4) join: nur Spieler, die in beQuiet sind
+    filtered = [(name, kills) for (name, kills) in all_counts if norm(name) in bequiet_names]
+
+    # 5) sortiert (kills desc) + Top-N
     filtered.sort(key=lambda x: x[1], reverse=True)
+    top = filtered[:MAX_LINES]
 
-    header = "**Netherworld – Daily Monstercount (beQuiet)**"
-    flavor = _load_random_line(TEXT_FILE)
+    # 6) Discord-Text
+    header = "🧪 Testlauf (Monstercount): Script läuft und kann posten.\n" if TEST_RUN else ""
+    title = f"**Netherworld – Daily Monstercount ({GUILD_NAME})**\n"
+    body = f"{line}\n\n"
 
-    if not filtered:
-        _post_discord(f"{header}\n{flavor}\n\nHeute leider keine beQuiet-Kills gefunden.")
-        return
+    if not top:
+        body += "Heute leider keine beQuiet-Kills gefunden."
+    else:
+        lines = []
+        rank = 1
+        for name, kills in top:
+            # zwei Varianten, wie gewünscht
+            if rank % 2 == 1:
+                lines.append(f"**{rank}.** {name} hunted **{kills}** mobs")
+            else:
+                lines.append(f"**{rank}.** {name} killed **{kills}** monsters")
+            rank += 1
+        body += "\n".join(lines)
 
-    lines = []
-    for idx, (name, kills) in enumerate(filtered, start=1):
-        lines.append(f"{idx}. **{name}** — {kills:,} kills".replace(",", "."))
+    content = header + title + body
 
-    body = "\n".join(lines[:MAX_LINES])
-    msg = f"{header}\n{flavor}\n\n{body}"
-
-    _post_discord(msg)
+    post_discord(content)
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         print(f"Fehler: {e}", file=sys.stderr)
-        if WEBHOOK:
-            try:
-                _post_discord(f"⚠️ Monstercount-Tracker Fehler: `{e}`")
-            except Exception:
-                pass
         sys.exit(1)
