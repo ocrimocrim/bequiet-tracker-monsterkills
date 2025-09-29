@@ -1,41 +1,36 @@
-name: Monstercount Daily
+name: Daily Monstercount
 
 on:
   schedule:
-    - cron: "58 21 * * *"   # 23:58 Europe/Berlin = 21:58 UTC
-  workflow_dispatch:
+    # ACHTUNG: GitHub Actions nutzt UTC.
+    # 23:58 Uhr Europa/Berlin = 21:58 UTC (Sommerzeit). Im Winter (CET) = 22:58 UTC.
+    - cron: "58 21 * * *"
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # damit state_monster.json committet werden kann
+  contents: read
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          persist-credentials: true
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run monstercount tracker
+      - name: Run monstercount tracker (with debug)
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          SEND_TEST_MESSAGE: "true"    # für den ersten manuellen Test; später auf "false" setzen
-        run: python monstercount_tracker.py
-
-      - name: Commit state_monster.json (if changed)
+          TEST_MONSTERCOUNT: "true"    # einmalig zum Testen: schickt eine Testzeile
+          DEBUG_MONSTERCOUNT: "true"   # einmalig: schickt einen 🧪 DEBUG-Block mit Details
         run: |
-          if [ -f state_monster.json ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add state_monster.json || true
-            git diff --staged --quiet || git commit -m "Update state_monster.json"
-            git push
-          fi
+          python monstercount_tracker.py
