@@ -2,10 +2,10 @@ name: beQuiet Monstercount
 
 on:
   schedule:
-    # SOMMER (MESZ = UTC+2) → 23:40–23:55 DE = 21:40–21:55 UTC
-    - cron: "40-55/5 21 * * *"
-    # WINTER (MEZ = UTC+1) → 23:40–23:55 DE = 22:40–22:55 UTC
-    - cron: "40-55/5 22 * * *"
+    # SOMMER (MESZ = UTC+2) → 23:30–23:50 DE = 21:30–21:50 UTC
+    - cron: "30-50/5 21 * * *"
+    # WINTER (MEZ = UTC+1) → 23:30–23:50 DE = 22:30–22:50 UTC
+    - cron: "30-50/5 22 * * *"
   workflow_dispatch:
 
 permissions:
@@ -23,27 +23,87 @@ jobs:
         with:
           persist-credentials: true
 
+      # ---- Guard: nur 1x pro Tag UND nur zwischen 23:30–23:50 Europe/Berlin ----
+      - name: Guard (einmal pro Tag im Fenster 23:30–23:50 Europe/Berlin)
+        id: guard
+        shell: bash
+        run: |
+          set -e
+
+          # Lokale (Berlin) Uhrzeit/Datum ermitteln
+          LOCAL_HM=$(TZ=Europe/Berlin date +%H%M)
+          LOCAL_DATE=$(TZ=Europe/Berlin date +%F)
+
+          echo "Lokale Zeit (Europe/Berlin): $LOCAL_HM am $LOCAL_DATE"
+
+          # Nur im Fenster 23:30–23:50 ausführen
+          if [[ "$LOCAL_HM" -lt "2330" || "$LOCAL_HM" -gt "2350" ]]; then
+            echo "Nicht im Fenster 23:30–23:50 → Skip."
+            echo "run_now=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Bereits heute gelaufen?
+          GUARD_FILE="state_monstercount_guard.json"
+          if [[ -f "$GUARD_FILE" ]]; then
+            LAST_DATE=$(python - <<'PY'
+import json,sys
+with open("state_monstercount_guard.json","r",encoding="utf-8") as f:
+    try:
+        d=json.load(f)
+        print(d.get("last_run_date",""))
+    except:
+        print("")
+PY
+)
+            echo "Zuletzt gelaufen am: $LAST_DATE"
+            if [[ "$LAST_DATE" == "$LOCAL_DATE" ]]; then
+              echo "Heute bereits gelaufen → Skip."
+              echo "run_now=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          echo "run_now=true" >> $GITHUB_OUTPUT
+
       - name: Set up Python
+        if: steps.guard.outputs.run_now == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
       - name: Install dependencies
+        if: steps.guard.outputs.run_now == 'true'
         run: pip install -r requirements.txt
 
       - name: Run Monstercount tracker
+        if: steps.guard.outputs.run_now == 'true'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MONSTERCOUNT }}
-          # TEST_MONSTERCOUNT: "true"      # <- zum Testen temporär einkommentieren
-          # DEBUG_MONSTERCOUNT: "true"     # <- optional Debug
+          # DEBUG_MONSTERCOUNT: "true"     # <- optional: zum Debuggen kurzzeitig setzen
         run: python monstercount_tracker.py
 
-      - name: Commit state (if changed)
+      # Nach erfolgreichem Lauf den Tag markieren -> verhindert doppelte Posts am gleichen Abend
+      - name: Mark run for today
+        if: steps.guard.outputs.run_now == 'true'
+        shell: bash
         run: |
+          set -e
+          LOCAL_DATE=$(TZ=Europe/Berlin date +%F)
+          python - <<PY
+import json, io
+with io.open("state_monstercount_guard.json","w",encoding="utf-8") as f:
+    json.dump({"last_run_date": "${LOCAL_DATE}"}, f, ensure_ascii=False, indent=2)
+PY
+
+      - name: Commit state (if changed)
+        if: steps.guard.outputs.run_now == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state_monstercount_guard.json || true
           if [ -f state_monstercount.json ]; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add state_monstercount.json || true
-            git diff --staged --quiet || git commit -m "Update monstercount state"
-            git push
           fi
+          git diff --staged --quiet || git commit -m "Monstercount: mark run and/or update state"
+          git push
