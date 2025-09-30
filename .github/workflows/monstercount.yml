@@ -1,109 +1,44 @@
-name: beQuiet Monstercount
+name: monstercount
 
 on:
   schedule:
-    # SOMMER (MESZ = UTC+2) → 23:30–23:50 DE = 21:30–21:50 UTC
-    - cron: "30-50/5 21 * * *"
-    # WINTER (MEZ = UTC+1) → 23:30–23:50 DE = 22:30–22:50 UTC
-    - cron: "30-50/5 22 * * *"
+    # Daily Fenster
+    - cron: "41 21 * * *"   # 23:41 Berlin = 21:41 UTC im Winter abweichend, plane Puffer über mehrere Runs
+    - cron: "46 21 * * *"
+    - cron: "52 21 * * *"
+    # Weekly Fenster am Sonntag
+    - cron: "35 21 * * 0"
+    - cron: "45 21 * * 0"
+    # Monthly Fenster täglich, Skript postet nur am Monatsende
+    - cron: "25 21 * * *"
+    - cron: "45 21 * * *"
+    # Homepage-Scan 10, 18, 21 Berlin
+    - cron: "0 8 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 19 * * *"
   workflow_dispatch:
-
-permissions:
-  contents: write
-
-concurrency:
-  group: monstercount-tracker
-  cancel-in-progress: true
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          persist-credentials: true
-
-      # ---- Guard: nur 1x pro Tag UND nur zwischen 23:30–23:50 Europe/Berlin ----
-      - name: Guard (einmal pro Tag im Fenster 23:30–23:50 Europe/Berlin)
-        id: guard
-        shell: bash
-        run: |
-          set -e
-
-          # Lokale (Berlin) Uhrzeit/Datum ermitteln
-          LOCAL_HM=$(TZ=Europe/Berlin date +%H%M)
-          LOCAL_DATE=$(TZ=Europe/Berlin date +%F)
-
-          echo "Lokale Zeit (Europe/Berlin): $LOCAL_HM am $LOCAL_DATE"
-
-          # Nur im Fenster 23:30–23:50 ausführen
-          if [[ "$LOCAL_HM" -lt "2330" || "$LOCAL_HM" -gt "2350" ]]; then
-            echo "Nicht im Fenster 23:30–23:50 → Skip."
-            echo "run_now=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Bereits heute gelaufen?
-          GUARD_FILE="state_monstercount_guard.json"
-          if [[ -f "$GUARD_FILE" ]]; then
-            LAST_DATE=$(python - <<'PY'
-import json,sys
-with open("state_monstercount_guard.json","r",encoding="utf-8") as f:
-    try:
-        d=json.load(f)
-        print(d.get("last_run_date",""))
-    except:
-        print("")
-PY
-)
-            echo "Zuletzt gelaufen am: $LAST_DATE"
-            if [[ "$LAST_DATE" == "$LOCAL_DATE" ]]; then
-              echo "Heute bereits gelaufen → Skip."
-              echo "run_now=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-          fi
-
-          echo "run_now=true" >> $GITHUB_OUTPUT
-
-      - name: Set up Python
-        if: steps.guard.outputs.run_now == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install dependencies
-        if: steps.guard.outputs.run_now == 'true'
-        run: pip install -r requirements.txt
-
-      - name: Run Monstercount tracker
-        if: steps.guard.outputs.run_now == 'true'
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
+      - name: run tracker
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL_MONSTERCOUNT }}
-          # DEBUG_MONSTERCOUNT: "true"     # <- optional: zum Debuggen kurzzeitig setzen
-        run: python monstercount_tracker.py
-
-      # Nach erfolgreichem Lauf den Tag markieren -> verhindert doppelte Posts am gleichen Abend
-      - name: Mark run for today
-        if: steps.guard.outputs.run_now == 'true'
-        shell: bash
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          set -e
-          LOCAL_DATE=$(TZ=Europe/Berlin date +%F)
-          python - <<PY
-import json, io
-with io.open("state_monstercount_guard.json","w",encoding="utf-8") as f:
-    json.dump({"last_run_date": "${LOCAL_DATE}"}, f, ensure_ascii=False, indent=2)
-PY
-
-      - name: Commit state (if changed)
-        if: steps.guard.outputs.run_now == 'true'
+          python monstercount_tracker.py
+      - name: commit updates
+        if: always()
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state_monstercount_guard.json || true
-          if [ -f state_monstercount.json ]; then
-            git add state_monstercount.json || true
-          fi
-          git diff --staged --quiet || git commit -m "Monstercount: mark run and/or update state"
-          git push
+          git add state_monstercount.json members_bequiet.txt || true
+          git commit -m "Update state and members" || echo "nichts zu committen"
+          git push || true
