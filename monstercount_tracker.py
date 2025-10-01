@@ -2,10 +2,10 @@ import os
 import sys
 import json
 import time
-import pytz
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -14,7 +14,7 @@ STATE_FILE = "monstercount_state.json"
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 BEQUIET_URL = "https://www.bequiet.com/de/news"
 
-BERLIN = pytz.timezone("Europe/Berlin")
+BERLIN = ZoneInfo("Europe/Berlin")
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -28,14 +28,14 @@ def save_state(state):
 
 def post_to_discord(message, retries=3):
     if not DISCORD_WEBHOOK:
-        logging.warning("Kein DISCORD_WEBHOOK gesetzt. Nachricht wäre gewesen:\n%s", message)
+        logging.warning("Kein DISCORD_WEBHOOK gesetzt. Nachricht wäre gewesen\n%s", message)
         return
     for attempt in range(1, retries + 1):
         try:
             resp = requests.post(DISCORD_WEBHOOK, json={"content": message}, timeout=15)
             if resp.status_code == 204:
                 return
-            logging.error("Discord Fehler HTTP %s Versuch %s", resp.status_code, attempt)
+            logging.error("Discord HTTP %s Versuch %s", resp.status_code, attempt)
         except Exception as e:
             logging.error("Discord Ausnahme Versuch %s %s", attempt, e)
         time.sleep(2 * attempt)
@@ -45,6 +45,7 @@ def post_to_discord(message, retries=3):
 # -----------------------------------------
 
 def in_2355_window(dt_utc):
+    """Erlaubtes Fenster 23:50:00 bis 23:59:59 Europa/Berlin."""
     local = dt_utc.astimezone(BERLIN)
     start = local.replace(hour=23, minute=50, second=0, microsecond=0)
     end = local.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -76,17 +77,16 @@ def run_homepage_scan(now_utc):
             if titles:
                 post_to_discord("🧭 Neue beQuiet-Namen von der Homepage aufgenommen")
         except Exception as e:
-            logging.error("Fehler beim Homepage-Scan: %s", e)
+            logging.error("Fehler beim Homepage-Scan %s", e)
 
 # -----------------------------------------
 # Main
 # -----------------------------------------
 
 def main():
-    now_utc = datetime.now(pytz.utc)
+    now_utc = datetime.now(timezone.utc)
     state = load_state()
 
-    # Homepage-Scan
     run_homepage_scan(now_utc)
 
     local = now_utc.astimezone(BERLIN)
