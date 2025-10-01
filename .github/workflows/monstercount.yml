@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # wir committen die State-JSON ins Repo
+  contents: write   # wir commiten die State-JSON ins Repo
 
 jobs:
   run:
@@ -34,10 +34,12 @@ jobs:
       - name: Run MonsterCount Tracker
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          # Optional: eigene Quelle für die Monstercount-Tabelle
+          MONSTERCOUNT_URL: ${{ secrets.MONSTERCOUNT_URL }}
         run: |
           python monstercount_tracker.py
 
-      - name: Commit and push state if changed
+      - name: Commit state if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
