@@ -10,13 +10,13 @@ from bs4 import BeautifulSoup
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-STATE_FILE = "monstercount_state.json"
+STATE_FILE = "monstercount_state.json"        # liegt direkt im Repo und wird committet
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 BEQUIET_URL = "https://www.bequiet.com/de/news"
 BERLIN = ZoneInfo("Europe/Berlin")
 
 # -----------------------------------------
-# State laden und speichern
+# State
 # -----------------------------------------
 
 def _empty_state():
@@ -25,7 +25,7 @@ def _empty_state():
         "last_weekly": "",
         "last_monthly": "",
         "daily_sums": {},   # "YYYY-MM-DD" -> int
-        "week_sums": {},    # "YYYY-Www"   -> int ISO-Woche
+        "week_sums": {},    # "YYYY-Www"   -> int (ISO-Woche)
         "month_sums": {}    # "YYYY-MM"    -> int
     }
 
@@ -35,11 +35,11 @@ def load_state():
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # fehlende Felder robust ergänzen
         base = _empty_state()
         base.update(data)
         return base
-    except Exception:
+    except Exception as e:
+        logging.error("State defekt, starte leer: %s", e)
         return _empty_state()
 
 def save_state(state):
@@ -52,7 +52,7 @@ def save_state(state):
 
 def post_to_discord(message, retries=3):
     if not DISCORD_WEBHOOK:
-        logging.warning("Kein DISCORD_WEBHOOK gesetzt. Nachricht wäre gewesen\n%s", message)
+        logging.warning("Kein DISCORD_WEBHOOK gesetzt. Nachricht wäre gewesen:\n%s", message)
         return
     for attempt in range(1, retries + 1):
         try:
@@ -67,10 +67,8 @@ def post_to_discord(message, retries=3):
 # -----------------------------------------
 # Heutige Zahl beziehen
 # -----------------------------------------
-# Du kannst die Quelle später ersetzen. Standard:
-# Wenn kills_today.txt existiert, wird die dort stehende Zahl verwendet.
-# Sonst gilt 0.
-
+# Placeholder: liest optional eine Zahl aus kills_today.txt.
+# Wenn die Datei fehlt/leer ist, wird 0 verwendet.
 def get_kills_today():
     path = "kills_today.txt"
     if os.path.exists(path):
@@ -96,7 +94,7 @@ def add_to_aggregates(state, local_dt, kills_today):
     state["month_sums"][month_key] = state["month_sums"].get(month_key, 0) + kills_today
 
 # -----------------------------------------
-# Zeitfenster 23:50 bis 23:59 Europa Berlin
+# Zeitfenster 23:50 bis 23:59 Europa/Berlin
 # -----------------------------------------
 
 def in_evening_window(dt_utc):
@@ -143,7 +141,7 @@ def main():
 
     state = load_state()
 
-    # Heutigen Wert beziehen und direkt aggregieren
+    # Tageswert holen und direkt addieren
     kills_today = get_kills_today()
     add_to_aggregates(state, local, kills_today)
 
@@ -167,7 +165,7 @@ def main():
             total = state["week_sums"].get(week_key, 0)
             post_to_discord(f"📈 Weekly Kills {week_key} insgesamt {total}")
             state["last_weekly"] = week_key
-            # Woche für neuen Zyklus leeren
+            # neue Woche neu sammeln
             state["week_sums"][week_key] = 0
 
     # Monthly
@@ -176,7 +174,7 @@ def main():
             total = state["month_sums"].get(month_key, 0)
             post_to_discord(f"📅 Monthly Kills {month_key} insgesamt {total}")
             state["last_monthly"] = month_key
-            # Monat für neuen Zyklus leeren
+            # neuer Monat neu sammeln
             state["month_sums"][month_key] = 0
 
     save_state(state)
