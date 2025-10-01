@@ -2,6 +2,15 @@
   "last_daily": "",
   "last_weekly": "",
   "last_monthly": "",
+  "daily_per_member": {
+    "2025-10-02": {}
+  },
+  "weekly_per_member": {
+    "2025-W40": {}
+  },
+  "monthly_per_member": {
+    "2025-10": {}
+  },
   "daily_sums": {
     "2025-10-02": 0
   },
