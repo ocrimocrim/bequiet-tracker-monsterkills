@@ -2,11 +2,14 @@ name: MonsterCount
 
 on:
   schedule:
-    # Sommerzeit in Berlin entspricht typischerweise 21:55 UTC
+    # Sommerzeit Berlin ≈ 21:55 UTC
     - cron: "55 21 * * *"
-    # Winterzeit in Berlin entspricht typischerweise 22:55 UTC
+    # Winterzeit Berlin ≈ 22:55 UTC
     - cron: "55 22 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write   # wir committen die State-JSON ins Repo
 
 jobs:
   run:
@@ -15,14 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Vorherigen State laden, falls vorhanden
-      - name: Vorherigen State laden
-        uses: actions/download-artifact@v4
         with:
-          name: state
-          path: .
-        continue-on-error: true
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,11 +37,12 @@ jobs:
         run: |
           python monstercount_tracker.py
 
-      # Aktuellen State speichern
-      - name: State speichern
-        uses: actions/upload-artifact@v4
-        with:
-          name: state
-          path: monstercount_state.json
-          if-no-files-found: ignore
-          retention-days: 90
+      - name: Commit and push state if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add monstercount_state.json || true
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] Update monstercount_state.json"
+            git push
+          fi
