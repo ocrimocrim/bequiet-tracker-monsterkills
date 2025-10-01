@@ -2,8 +2,9 @@ name: MonsterCount
 
 on:
   schedule:
-    # Ein einziger Run pro Tag, um 22:55 UTC
-    # Das Script selbst prüft, ob in Berlin 23:50–23:59 ist
+    # Sommerzeit in Berlin entspricht typischerweise 21:55 UTC
+    - cron: "55 21 * * *"
+    # Winterzeit in Berlin entspricht typischerweise 22:55 UTC
     - cron: "55 22 * * *"
   workflow_dispatch:
 
@@ -14,6 +15,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Vorherigen State laden, falls vorhanden
+      - name: Vorherigen State laden
+        uses: actions/download-artifact@v4
+        with:
+          name: state
+          path: .
+        continue-on-error: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,3 +39,12 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           python monstercount_tracker.py
+
+      # Aktuellen State speichern
+      - name: State speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: state
+          path: monstercount_state.json
+          if-no-files-found: ignore
+          retention-days: 90
