@@ -73,6 +73,7 @@ def load_state() -> dict:
         "last_daily_date": "",
         "weekly":  {"year_week": "",  "kills": {}},
         "monthly": {"year_month": "", "kills": {}},
+        "yearly":  {"year": "", "kills": {}},
     }
 
 def save_state(state: dict):
@@ -208,17 +209,26 @@ def year_month(dt: datetime) -> str:
     return f"{dt.year}-{dt.month:02d}"
 
 def aggregate_into(state: dict, joined: list[tuple[str, int]], dt: datetime):
+    # weekly
     iw = iso_year_week(dt)
     if state["weekly"].get("year_week") != iw:
         state["weekly"] = {"year_week": iw, "kills": {}}
     for name, kills in joined:
         state["weekly"]["kills"][name] = state["weekly"]["kills"].get(name, 0) + kills
 
+    # monthly
     ym = year_month(dt)
     if state["monthly"].get("year_month") != ym:
         state["monthly"] = {"year_month": ym, "kills": {}}
     for name, kills in joined:
         state["monthly"]["kills"][name] = state["monthly"]["kills"].get(name, 0) + kills
+
+    # yearly
+    y = str(dt.year)
+    if state["yearly"].get("year") != y:
+        state["yearly"] = {"year": y, "kills": {}}
+    for name, kills in joined:
+        state["yearly"]["kills"][name] = state["yearly"]["kills"].get(name, 0) + kills
 
 def pick_spruch() -> str:
     for p in SPRUCH_FILES:
@@ -329,6 +339,22 @@ def run_monthly(state: dict, now_local: datetime):
     state["monthly"] = {"year_month": year_month(first_next_month), "kills": {}}
     save_state(state)
 
+def run_yearly(state: dict, now_local: datetime):
+    if not (now_local.month == 12 and now_local.day == 31):
+        return
+    if not is_in_window(now_local, 0, 59):
+        return
+
+    yr = state.get("yearly", {})
+    kills_map = yr.get("kills", {})
+    ranking = sorted(kills_map.items(), key=lambda x: x[1], reverse=True)
+    spruch = pick_spruch()
+    post_discord(format_ranking(f"Yearly Monstercount {yr.get('year','')}", ranking, spruch))
+
+    next_year = now_local.year + 1
+    state["yearly"] = {"year": str(next_year), "kills": {}}
+    save_state(state)
+
 # -------------------- Main --------------------
 
 def main():
@@ -340,6 +366,7 @@ def main():
     run_daily(state, now_local)
     run_weekly(state, now_local)
     run_monthly(state, now_local)
+    run_yearly(state, now_local)
 
 if __name__ == "__main__":
     try:
