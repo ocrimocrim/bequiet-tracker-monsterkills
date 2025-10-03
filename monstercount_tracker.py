@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-# Feste Quellen wie in deinem Code
+# Feste Quellen
 RANKING_URL  = "https://pr-underworld.com/website/ranking/"
 MONSTER_URL  = "https://pr-underworld.com/website/monstercount/"
 HOMEPAGE_URL = "https://pr-underworld.com/website/"
@@ -33,7 +33,11 @@ MONTHLY_START_MIN = 20  # 23:20
 MONTHLY_END_MIN   = 59  # 23:59 inkl.
 
 # Dateien
-STATE_FILE   = Path("state_monstercount.json")  # wie bei dir
+REPO_DIR = Path(__file__).resolve().parent
+STATE_DIR = REPO_DIR / "data"
+STATE_DIR.mkdir(exist_ok=True)
+STATE_FILE = STATE_DIR / "state_monstercount.json"  # fester Pfad im Repo
+
 MEMBERS_FILE = Path("members_bequiet.txt")
 SPRUCH_FILES = ["texts_monsterkills.txt", "Texts for Monsterkills.txt"]
 
@@ -65,7 +69,6 @@ def load_state() -> dict:
             return json.loads(STATE_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
-    # Default-Struktur wie bei dir
     return {
         "last_daily_date": "",
         "weekly":  {"year_week": "",  "kills": {}},
@@ -74,6 +77,13 @@ def load_state() -> dict:
 
 def save_state(state: dict):
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def save_daily_snapshot(state: dict, now_local):
+    snap = STATE_DIR / f"daily_{now_local.date().isoformat()}.json"
+    try:
+        snap.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"Snapshot-Fehler {e}", file=sys.stderr)
 
 # -------------------- Discord --------------------
 
@@ -92,7 +102,6 @@ def get_soup(url: str) -> BeautifulSoup:
     return BeautifulSoup(r.text, "html.parser")
 
 def find_netherworld_table(soup: BeautifulSoup):
-    """Tabelle direkt unter der Überschrift 'Netherworld' (Underworld ignorieren)."""
     for h in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         if h.get_text(" ", strip=True).lower().startswith("netherworld"):
             return h.find_next("table")
@@ -101,7 +110,6 @@ def find_netherworld_table(soup: BeautifulSoup):
 # -------------------- Mitglieder --------------------
 
 def load_members() -> dict:
-    """Gibt dict lower_name -> canonical_name zurück."""
     out = {}
     if MEMBERS_FILE.exists():
         for ln in MEMBERS_FILE.read_text(encoding="utf-8").splitlines():
@@ -132,12 +140,6 @@ def add_members(new_names: set[str]):
 # -------------------- Parser: Ranking / Homepage --------------------
 
 def load_bequiet_names_from_ranking() -> set[str]:
-    """
-    Ranking-Parser wie bei dir:
-      tds[0]: evtl. IMG
-      Name  = tds[2] wenn tds[0] ein IMG hat, sonst tds[1]
-      Guild = letzte td
-    """
     soup = get_soup(RANKING_URL)
     table = find_netherworld_table(soup)
     if not table:
@@ -149,7 +151,6 @@ def load_bequiet_names_from_ranking() -> set[str]:
         tds = tr.find_all("td")
         if len(tds) < 6:
             continue
-        # Name-Index robust wählen
         name_idx = 2 if (tds[0].find("img") is not None and len(tds) >= 3) else 1
         name = tds[name_idx].get_text(strip=True)
         guild = tds[-1].get_text(" ", strip=True)
@@ -158,15 +159,6 @@ def load_bequiet_names_from_ranking() -> set[str]:
     return bequiet
 
 def load_bequiet_names_from_homepage() -> set[str]:
-    """
-    Homepage-Parser: sucht in der Netherworld-Tabelle Namen, deren Guild-Spalte beQuiet enthält.
-    Spalten-Beispiel (kann variieren):
-      th = Rang
-      td[0] = Name
-      td[1] = Level
-      td[2] = Job img
-      td[3] = Guild icon + Text
-    """
     try:
         soup = get_soup(HOMEPAGE_URL)
     except Exception:
@@ -189,11 +181,6 @@ def load_bequiet_names_from_homepage() -> set[str]:
 # -------------------- Parser: Monstercount --------------------
 
 def load_monstercount() -> list[tuple[str, int]]:
-    """
-    Monstercount-Parser wie bei dir:
-      td[0] = Name
-      td[1] = Kills (heute)
-    """
     soup = get_soup(MONSTER_URL)
     table = find_netherworld_table(soup)
     if not table:
@@ -221,14 +208,12 @@ def year_month(dt: datetime) -> str:
     return f"{dt.year}-{dt.month:02d}"
 
 def aggregate_into(state: dict, joined: list[tuple[str, int]], dt: datetime):
-    # weekly
     iw = iso_year_week(dt)
     if state["weekly"].get("year_week") != iw:
         state["weekly"] = {"year_week": iw, "kills": {}}
     for name, kills in joined:
         state["weekly"]["kills"][name] = state["weekly"]["kills"].get(name, 0) + kills
 
-    # monthly
     ym = year_month(dt)
     if state["monthly"].get("year_month") != ym:
         state["monthly"] = {"year_month": ym, "kills": {}}
@@ -254,10 +239,8 @@ def format_ranking(title: str, entries: list[tuple[str, int]], spruch: str) -> s
             lines.append(f"{i}. **{name}** {verb} **{kills}** mobs")
         msg = f"{header}\n{spruch}\n\n" + "\n".join(lines)
 
-    # Sicherheitskürzung unter Discord-Limit
     if len(msg) <= DISCORD_SAFE_LIMIT:
         return msg
-    # binäre Suche
     body_lines = msg.split("\n")[2:] if "\n\n" in msg else msg.split("\n")
     low, high = 0, len(body_lines)
     best = "Keine Kills gefunden"
@@ -275,7 +258,6 @@ def format_ranking(title: str, entries: list[tuple[str, int]], spruch: str) -> s
 # -------------------- Runs --------------------
 
 def run_homepage_scan(now_local: datetime):
-    # optionaler Scan zu festen Stunden
     if now_local.hour not in {10, 18, 21}:
         return
     try:
@@ -296,29 +278,24 @@ def run_daily(state: dict, now_local: datetime):
         print(f"Heute schon gepostet {today}", file=sys.stderr)
         return
 
-    # 1) beQuiet aus Ranking + Members
     bequiet_ranking = {n.lower() for n in load_bequiet_names_from_ranking()}
-    members_map = load_members()  # lower -> canonical
+    members_map = load_members()
     bequiet_all = set(members_map.keys()) | bequiet_ranking
 
-    # 2) Tagesliste aus Monstercount
     all_counts = load_monstercount()
 
-    # 3) Join: nur beQuiet + kills > 0
     joined = [(n, k) for (n, k) in all_counts if n.lower() in bequiet_all and k > 0]
     joined.sort(key=lambda x: x[1], reverse=True)
 
-    # 4) Post
     spruch = pick_spruch()
     msg = format_ranking("Daily Monstercount", joined, spruch)
     post_discord(msg)
 
-    # 5) Aggregation
     aggregate_into(state, joined, now_local)
 
-    # 6) Flag und speichern
     state["last_daily_date"] = today
     save_state(state)
+    save_daily_snapshot(state, now_local)
 
 def run_weekly(state: dict, now_local: datetime):
     if now_local.isoweekday() != 7:
@@ -332,7 +309,6 @@ def run_weekly(state: dict, now_local: datetime):
     spruch = pick_spruch()
     post_discord(format_ranking(f"Weekly Monstercount {wk.get('year_week','')}", ranking, spruch))
 
-    # Reset für neue Woche (ab morgen)
     next_week = (now_local + timedelta(days=1))
     state["weekly"] = {"year_week": iso_year_week(next_week), "kills": {}}
     save_state(state)
@@ -349,7 +325,6 @@ def run_monthly(state: dict, now_local: datetime):
     spruch = pick_spruch()
     post_discord(format_ranking(f"Monthly Monstercount {mm.get('year_month','')}", ranking, spruch))
 
-    # Reset für neuen Monat (ab nächstem 1.)
     first_next_month = (now_local.replace(day=1) + timedelta(days=32)).replace(day=1)
     state["monthly"] = {"year_month": year_month(first_next_month), "kills": {}}
     save_state(state)
@@ -359,17 +334,11 @@ def run_monthly(state: dict, now_local: datetime):
 def main():
     state = load_state()
     now_local = berlin_now()
+    print(f"State-Datei Pfad {STATE_FILE.resolve()}", file=sys.stderr)
 
-    # Homepage-Scan
     run_homepage_scan(now_local)
-
-    # Daily
     run_daily(state, now_local)
-
-    # Weekly
     run_weekly(state, now_local)
-
-    # Monthly
     run_monthly(state, now_local)
 
 if __name__ == "__main__":
