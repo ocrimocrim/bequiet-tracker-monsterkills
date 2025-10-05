@@ -23,8 +23,8 @@ GUILD_NAME   = "beQuiet"
 
 # Zeitfenster (Berlin)
 BERLIN = ZoneInfo("Europe/Berlin")
-DAILY_START_MIN = 50    # 23:50
-DAILY_END_MIN   = 59    # 23:59 inkl.
+DAILY_START_MIN = 40    # 23:40
+DAILY_END_MIN   = 55    # 23:55 inkl.
 
 WEEKLY_START_MIN = 30   # 23:30
 WEEKLY_END_MIN   = 50   # 23:50 inkl.
