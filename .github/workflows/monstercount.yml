@@ -1,36 +1,39 @@
 name: Monstercount Tracker
 
 on:
-  schedule:
-    - cron: "50 23 * * *"   # jeden Tag um 23:50 Uhr
   workflow_dispatch:
+  schedule:
+    # Sommerzeitfenster Berlin 23:40–23:55 über 21:40–21:55 UTC
+    - cron: '40-55 21 * * *'
+    # Winterzeitfenster Berlin 23:40–23:55 über 22:40–22:55 UTC
+    - cron: '40-55 22 * * *'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: monstercount-tracker
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
+    env:
+      TZ: Europe/Berlin
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4
 
       - name: Run tracker
         run: python monstercount_tracker.py
-
-      - name: Commit state files
-        run: |
-          git config user.name "bequiet-bot"
-          git config user.email "bequiet-bot@example.com"
-          git add data/
-          git commit -m "Update state and daily snapshot" || echo "nothing to commit"
-          git push
