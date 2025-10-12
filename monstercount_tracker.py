@@ -16,7 +16,21 @@ LOCK_DIR = os.path.join(DATA_DIR, "locks")
 GUILD_MEMBERS_FILE = "members_bequiet.txt"  # ein Name pro Zeile
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
 
-# Basishilfen
+# -------------------------------------------------
+# Wenn load_monstercount bereits im Projekt existiert,
+# importiere sie hier. Sie liest die Website aus.
+# Beim alten Skript war sie im selben File definiert.
+# Falls sie in einem Modul liegt, passe den Import an.
+# -------------------------------------------------
+try:
+    # falls in eigenem Modul
+    from monstercount_tracker import load_monstercount  # noqa
+except Exception:
+    # falls die Funktion weiter unten im selben File steht,
+    # läuft dieser Import ins Leere und die lokale Definition greift
+    pass
+
+# Hilfen
 def ensure_dirs():
     for p in (STATE_DIR, LOG_DIR, LOCK_DIR):
         os.makedirs(p, exist_ok=True)
@@ -74,19 +88,14 @@ def load_json(path, default):
 def sort_desc(mapping):
     return OrderedDict(sorted(mapping.items(), key=lambda kv: kv[1], reverse=True))
 
-# Locking gegen doppelte Posts
+# Locking
 def try_lock(period, key):
-    """
-    Erzeugt eine eindeutige Lock-Datei. Gibt True zurück, wenn sie neu angelegt wurde.
-    Gibt False zurück, wenn bereits vorhanden.
-    """
     os.makedirs(LOCK_DIR, exist_ok=True)
     lock_path = os.path.join(LOCK_DIR, f"{period}_{key}.lock")
     try:
-        # atomar anlegen
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(f"created at {now_berlin().isoformat()}")
+            f.write(now_berlin().isoformat())
         return True
     except FileExistsError:
         return False
@@ -114,12 +123,27 @@ def add_scores(state, data):
         scores[n] = scores.get(n, 0) + int(v)
 
 # Datenquelle
-def fetch_all_players_today(dt):
+def fetch_from_website() -> dict:
     """
-    Ersetze diesen Stub durch deine echte Quelle.
-    Erwartet ein Dict mit allen Spielern des Tages.
+    Holt alle Spieler und Tageskills direkt von der Website.
+    Erwartetes Ergebnisformat: {name: kills}
     """
-    raise NotImplementedError("fetch_all_players_today an echte Quelle anpassen.")
+    rows = load_monstercount()  # bestehende Scrape-Funktion
+    data = {}
+    for row in rows:
+        if isinstance(row, dict):
+            name = row.get("name") or row.get("player")
+            kills = int(row.get("kills", 0))
+        else:
+            # z. B. Tuple mit (rang, name, kills)
+            if len(row) >= 3:
+                name = str(row[1]).strip()
+                kills = int(row[2])
+            else:
+                continue
+        if name:
+            data[name] = kills
+    return data
 
 # Protokolle
 def write_daily_logs(dt, all_players, guild_only):
@@ -159,7 +183,10 @@ def run_daily():
         return
 
     members = load_members()
-    all_players = fetch_all_players_today(dt)
+
+    # Daily immer live von der Website
+    all_players = fetch_from_website()
+
     guild_only = {n: v for n, v in all_players.items() if n in members}
 
     write_daily_logs(dt, all_players, guild_only)
@@ -180,7 +207,7 @@ def run_daily():
 def run_weekly():
     dt = now_berlin()
     if dt.weekday() != 6:
-        print("Heute ist kein Sonntag in Berlin. Beende.")
+        print("Kein Sonntag in Berlin. Beende.")
         return
     wkey = iso_week_key(dt)
     if not try_lock("weekly", wkey):
@@ -199,7 +226,7 @@ def run_weekly():
 def run_monthly():
     dt = now_berlin()
     if not is_last_day_of_month(dt):
-        print("Heute ist nicht der letzte Tag des Monats in Berlin. Beende.")
+        print("Nicht der letzte Tag des Monats in Berlin. Beende.")
         return
     mkey = month_key(dt)
     if not try_lock("monthly", mkey):
@@ -217,7 +244,7 @@ def run_monthly():
 def run_yearly():
     dt = now_berlin()
     if not is_last_day_of_year(dt):
-        print("Heute ist nicht der letzte Tag des Jahres in Berlin. Beende.")
+        print("Nicht der letzte Tag des Jahres in Berlin. Beende.")
         return
     ykey = year_key(dt)
     if not try_lock("yearly", ykey):
