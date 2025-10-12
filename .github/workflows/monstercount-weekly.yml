@@ -2,8 +2,8 @@ name: Monstercount Weekly
 
 on:
   schedule:
-    - cron: '30 21 * * 0'    # Sonntag 23:30 Berlin in MESZ
-    - cron: '30 22 * * 0'    # Sonntag 23:30 Berlin in MEZ
+    - cron: '30 21 * * 0'
+    - cron: '30 22 * * 0'
   workflow_dispatch:
 
 concurrency:
@@ -28,9 +28,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/
-          key: data-main
+          key: data-main-v2
           restore-keys: |
-            data-
+            data-main-
 
       - name: Zufallswartezeit
         if: github.event_name == 'schedule'
@@ -39,7 +39,7 @@ jobs:
           echo "Sleep $S Sekunden"
           sleep $S
 
-      - name: Dry Run nur bei manueller Ausführung setzen
+      - name: Dry Run nur bei manueller Ausführung
         if: github.event_name == 'workflow_dispatch'
         run: echo "DRY_RUN=1" >> "$GITHUB_ENV"
 
@@ -49,3 +49,11 @@ jobs:
           TZ: Europe/Berlin
         run: |
           python monstercount_tracker.py --mode weekly
+
+      - name: Data als Artifact bereitstellen bei manueller Ausführung
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-folder
+          path: data/
+          if-no-files-found: warn
