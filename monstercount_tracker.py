@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import urllib.request
 
-# Konfiguration
+# Grundkonfiguration
 TZ = ZoneInfo("Europe/Berlin")
 DATA_DIR = "data"
 STATE_DIR = os.path.join(DATA_DIR, "state")
@@ -15,26 +15,14 @@ LOCK_DIR = os.path.join(DATA_DIR, "locks")
 
 GUILD_MEMBERS_FILE = "members_bequiet.txt"  # ein Name pro Zeile
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
+DRY_RUN = os.environ.get("DRY_RUN", "") == "1"
 
-# -------------------------------------------------
-# Wenn load_monstercount bereits im Projekt existiert,
-# importiere sie hier. Sie liest die Website aus.
-# Beim alten Skript war sie im selben File definiert.
-# Falls sie in einem Modul liegt, passe den Import an.
-# -------------------------------------------------
-try:
-    # falls in eigenem Modul
-    from monstercount_tracker import load_monstercount  # noqa
-except Exception:
-    # falls die Funktion weiter unten im selben File steht,
-    # läuft dieser Import ins Leere und die lokale Definition greift
-    pass
-
-# Hilfen
+# Verzeichnisse anlegen
 def ensure_dirs():
     for p in (STATE_DIR, LOG_DIR, LOCK_DIR):
         os.makedirs(p, exist_ok=True)
 
+# Zeit
 def now_berlin():
     return datetime.now(TZ)
 
@@ -58,13 +46,19 @@ def is_last_day_of_month(dt):
 def is_last_day_of_year(dt):
     return dt.month == 12 and dt.day == 31
 
+# Mitgliederliste
 def load_members(path=GUILD_MEMBERS_FILE):
     if not os.path.exists(path):
         return set()
     with open(path, "r", encoding="utf-8") as f:
         return {l.strip() for l in f if l.strip()}
 
+# Slack
 def slack_post(text):
+    if DRY_RUN:
+        print("DRY_RUN aktiv. Kein Post.")
+        print(text)
+        return
     if not SLACK_WEBHOOK:
         print("Slack Webhook fehlt. Ausgabe in Konsole.")
         print(text)
@@ -74,6 +68,7 @@ def slack_post(text):
     with urllib.request.urlopen(req) as r:
         r.read()
 
+# JSON IO
 def save_json(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -85,10 +80,11 @@ def load_json(path, default):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+# Sortierung
 def sort_desc(mapping):
     return OrderedDict(sorted(mapping.items(), key=lambda kv: kv[1], reverse=True))
 
-# Locking
+# Locking gegen Doppelposts
 def try_lock(period, key):
     os.makedirs(LOCK_DIR, exist_ok=True)
     lock_path = os.path.join(LOCK_DIR, f"{period}_{key}.lock")
@@ -100,12 +96,7 @@ def try_lock(period, key):
     except FileExistsError:
         return False
 
-def clear_lock(period, key):
-    path = os.path.join(LOCK_DIR, f"{period}_{key}.lock")
-    if os.path.exists(path):
-        os.remove(path)
-
-# Zustände
+# Zustände weekly monthly yearly
 def state_path(period):
     return os.path.join(STATE_DIR, f"{period}.json")
 
@@ -122,30 +113,7 @@ def add_scores(state, data):
     for n, v in data.items():
         scores[n] = scores.get(n, 0) + int(v)
 
-# Datenquelle
-def fetch_from_website() -> dict:
-    """
-    Holt alle Spieler und Tageskills direkt von der Website.
-    Erwartetes Ergebnisformat: {name: kills}
-    """
-    rows = load_monstercount()  # bestehende Scrape-Funktion
-    data = {}
-    for row in rows:
-        if isinstance(row, dict):
-            name = row.get("name") or row.get("player")
-            kills = int(row.get("kills", 0))
-        else:
-            # z. B. Tuple mit (rang, name, kills)
-            if len(row) >= 3:
-                name = str(row[1]).strip()
-                kills = int(row[2])
-            else:
-                continue
-        if name:
-            data[name] = kills
-    return data
-
-# Protokolle
+# Protokolle pro Tag
 def write_daily_logs(dt, all_players, guild_only):
     y = f"{dt.year:04d}"
     m = f"{dt.month:02d}"
@@ -154,7 +122,7 @@ def write_daily_logs(dt, all_players, guild_only):
     save_json(os.path.join(base, f"{d}_all.json"), sort_desc(all_players))
     save_json(os.path.join(base, f"{d}_guild.json"), sort_desc(guild_only))
 
-# Formatierung
+# Texte
 def header_daily(dt, guild):
     return f"Netherworld Daily Monstercount ({guild})\nToday you crushed monsters like butterflies under steel boots. But hey, butterflies respawn too."
 
@@ -174,9 +142,15 @@ def body(scores):
         lines.append(f"{i}. {name} hunted {kills} mobs")
     return "\n".join(lines)
 
-# Läufe
+# Daily
 def run_daily():
     dt = now_berlin()
+
+    if DRY_RUN:
+        print("DRY_RUN aktiv. Erstelle Ordner und beende ohne Websitezugriff und ohne Post.")
+        ensure_dirs()
+        return
+
     day_key = dt.strftime("%Y-%m-%d")
     if not try_lock("daily", day_key):
         print("Daily bereits gepostet. Beende.")
@@ -184,8 +158,31 @@ def run_daily():
 
     members = load_members()
 
-    # Daily immer live von der Website
-    all_players = fetch_from_website()
+    # Direkt von der Website laden
+    # Erwartetes Ergebnisformat dict Name zu Kills
+    # Deine Funktion load_monstercount muss oberhalb in derselben Datei existieren
+    # oder aus deinem bestehenden Code mit gleicher Signatur übernommen werden
+    try:
+        all_players = load_monstercount()
+    except NameError as e:
+        raise RuntimeError("load_monstercount fehlt. Bitte deine bestehende Web Scrape Funktion in diese Datei übernehmen oder oberhalb definieren.") from e
+
+    # Falls deine Funktion eine Liste liefert, hier optional normalisieren
+    if isinstance(all_players, list):
+        tmp = {}
+        for row in all_players:
+            if isinstance(row, dict):
+                name = row.get("name") or row.get("player")
+                kills = int(row.get("kills", 0))
+            else:
+                if len(row) >= 3:
+                    name = str(row[1]).strip()
+                    kills = int(row[2])
+                else:
+                    continue
+            if name:
+                tmp[name] = kills
+        all_players = tmp
 
     guild_only = {n: v for n, v in all_players.items() if n in members}
 
@@ -204,66 +201,97 @@ def run_daily():
     text = header_daily(dt, "beQuiet") + "\n\n" + body(guild_only)
     slack_post(text)
 
+# Weekly
 def run_weekly():
     dt = now_berlin()
     if dt.weekday() != 6:
         print("Kein Sonntag in Berlin. Beende.")
         return
+    if DRY_RUN:
+        print("DRY_RUN aktiv. Weekly erstellt keine Posts.")
+        ensure_dirs()
+        return
+
     wkey = iso_week_key(dt)
     if not try_lock("weekly", wkey):
         print("Weekly bereits gepostet. Beende.")
         return
+
     ws = reset_if_new("weekly", wkey)
     scores = ws.get("scores", {})
     if not scores:
         print("Weekly ohne Daten. Beende.")
         return
+
     text = header_weekly(dt, "beQuiet") + "\n\n" + body(scores)
     slack_post(text)
-    # neue Woche vorbereiten
+
+    # neue Woche leeren
     save_json(state_path("weekly"), {"_meta": {"key": wkey}, "scores": {}})
 
+# Monthly
 def run_monthly():
     dt = now_berlin()
     if not is_last_day_of_month(dt):
         print("Nicht der letzte Tag des Monats in Berlin. Beende.")
         return
+    if DRY_RUN:
+        print("DRY_RUN aktiv. Monthly erstellt keine Posts.")
+        ensure_dirs()
+        return
+
     mkey = month_key(dt)
     if not try_lock("monthly", mkey):
         print("Monthly bereits gepostet. Beende.")
         return
+
     ms = reset_if_new("monthly", mkey)
     scores = ms.get("scores", {})
     if not scores:
         print("Monthly ohne Daten. Beende.")
         return
+
     text = header_monthly(dt, "beQuiet") + "\n\n" + body(scores)
     slack_post(text)
+
+    # neuen Monat leeren
     save_json(state_path("monthly"), {"_meta": {"key": mkey}, "scores": {}})
 
+# Yearly
 def run_yearly():
     dt = now_berlin()
     if not is_last_day_of_year(dt):
         print("Nicht der letzte Tag des Jahres in Berlin. Beende.")
         return
+    if DRY_RUN:
+        print("DRY_RUN aktiv. Yearly erstellt keine Posts.")
+        ensure_dirs()
+        return
+
     ykey = year_key(dt)
     if not try_lock("yearly", ykey):
         print("Yearly bereits gepostet. Beende.")
         return
+
     ys = reset_if_new("yearly", ykey)
     scores = ys.get("scores", {})
     if not scores:
         print("Yearly ohne Daten. Beende.")
         return
+
     text = header_yearly(dt, "beQuiet") + "\n\n" + body(scores)
     slack_post(text)
+
+    # neues Jahr leeren
     save_json(state_path("yearly"), {"_meta": {"key": ykey}, "scores": {}})
 
+# Main
 def main():
     ensure_dirs()
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["daily", "weekly", "monthly", "yearly"], required=True)
     args = parser.parse_args()
+
     if args.mode == "daily":
         run_daily()
     elif args.mode == "weekly":
