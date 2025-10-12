@@ -1,0 +1,41 @@
+name: Monstercount Weekly
+
+on:
+  schedule:
+    - cron: '30 21 * * 0'   # Sonntag 23:30 Berlin in MESZ
+    - cron: '30 22 * * 0'   # Sonntag 23:30 Berlin in MEZ
+  workflow_dispatch:
+
+concurrency:
+  group: monstercount-weekly
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Abhängigkeiten
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Cache laden
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: data-${{ github.ref_name }}
+          restore-keys: |
+            data-
+      - name: Zufallswartezeit
+        run: |
+          S=$(( RANDOM % 1201 ))
+          sleep $S
+      - name: Weekly ausführen
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TZ: Europe/Berlin
+        run: |
+          python monstercount_tracker.py --mode weekly
