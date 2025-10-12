@@ -2,8 +2,8 @@ name: Monstercount Daily
 
 on:
   schedule:
-    - cron: '30 21 * * *'    # 23:30 Berlin in MESZ
-    - cron: '30 22 * * *'    # 23:30 Berlin in MEZ
+    - cron: '30 21 * * *'    # 23:30 Berlin in MESZ (UTC+2)
+    - cron: '30 22 * * *'    # 23:30 Berlin in MEZ  (UTC+1)
   workflow_dispatch:
 
 permissions:
@@ -23,34 +23,33 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Abhängigkeiten
+      - name: Abhängigkeiten installieren
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Zufällige Startzeit nur bei Zeitplan
-      - name: Zufallswartezeit 23:30–23:50 Berlin
+      # Nur für geplante Läufe: Zufallswartezeit bis 20 Min (Fenster 23:30–23:50)
+      - name: Zufallswartezeit 23:30–23:50 (nur schedule)
         if: github.event_name == 'schedule'
         run: |
           S=$(( RANDOM % 1201 ))
           echo "Sleep $S Sekunden"
           sleep $S
 
-      # Bei manueller Ausführung NICHT posten, aber alles berechnen + committen
-      - name: NO_POST nur bei manueller Ausführung
+      # Nur bei manueller Auslösung: keine Posts, aber Daten/Commits
+      - name: NO_POST für manuelle Runs
         if: github.event_name == 'workflow_dispatch'
         run: echo "NO_POST=1" >> "$GITHUB_ENV"
 
-      - name: Daily ausführen
+      - name: Tracker ausführen (Daily wird intern erkannt)
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          TZ: Europe/Berlin
-        run: python monstercount_tracker.py --mode daily
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python monstercount_tracker.py
 
       - name: data/ committen
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/ || true
-          git commit -m "chore(data): update after Daily ($GITHUB_RUN_ID)" || echo "nichts zu committen"
-          git push || echo "kein Push möglich"
+          git commit -m "chore(data): update after Daily run ($GITHUB_RUN_ID)" || echo "nichts zu committen"
+          git push || echo "kein Push möglich (Branchschutz?)"
