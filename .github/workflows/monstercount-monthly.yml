@@ -18,24 +18,42 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Abhängigkeiten
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Cache laden
         uses: actions/cache@v4
         with:
           path: data/
-          key: data-${{ github.ref_name }}
+          key: data-main-v2
           restore-keys: |
-            data-
+            data-main-
+
       - name: Zufallswartezeit
+        if: github.event_name == 'schedule'
         run: |
           S=$(( RANDOM % 1201 ))
+          echo "Sleep $S Sekunden"
           sleep $S
+
+      - name: Dry Run nur bei manueller Ausführung
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "DRY_RUN=1" >> "$GITHUB_ENV"
+
       - name: Monthly ausführen
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           TZ: Europe/Berlin
         run: |
           python monstercount_tracker.py --mode monthly
+
+      - name: Data als Artifact bereitstellen bei manueller Ausführung
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-folder
+          path: data/
+          if-no-files-found: warn
