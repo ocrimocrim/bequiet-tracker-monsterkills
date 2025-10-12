@@ -2,8 +2,8 @@ name: Monstercount Monthly
 
 on:
   schedule:
-    - cron: '30 21 * * *'
-    - cron: '30 22 * * *'
+    - cron: '20 21 * * *'    # Startfenster für Monatsende (MESZ)
+    - cron: '20 22 * * *'    # Startfenster für Monatsende (MEZ)
   workflow_dispatch:
 
 permissions:
@@ -18,36 +18,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Abhängigkeiten
+      - name: Abhängigkeiten installieren
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Zufallswartezeit
+      - name: Zufallswartezeit (nur schedule)
         if: github.event_name == 'schedule'
         run: |
-          S=$(( RANDOM % 1201 ))
+          S=$(( RANDOM % 2401 ))  # bis ~40 Min
           echo "Sleep $S Sekunden"
           sleep $S
 
-      - name: NO_POST nur bei manueller Ausführung
+      - name: NO_POST für manuelle Runs
         if: github.event_name == 'workflow_dispatch'
         run: echo "NO_POST=1" >> "$GITHUB_ENV"
 
-      - name: Monthly ausführen
+      - name: Tracker ausführen (Monthly wird intern erkannt)
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          TZ: Europe/Berlin
-        run: python monstercount_tracker.py --mode monthly
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python monstercount_tracker.py
 
       - name: data/ committen
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/ || true
-          git commit -m "chore(data): update after Monthly ($GITHUB_RUN_ID)" || echo "nichts zu committen"
-          git push || echo "kein Push möglich"
+          git commit -m "chore(data): update after Monthly run ($GITHUB_RUN_ID)" || echo "nichts zu committen"
+          git push || echo "kein Push möglich (Branchschutz?)"
