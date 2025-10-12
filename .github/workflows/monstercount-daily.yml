@@ -2,9 +2,12 @@ name: Monstercount Daily
 
 on:
   schedule:
-    - cron: '30 21 * * *'
-    - cron: '30 22 * * *'
+    - cron: '30 21 * * *'    # 23:30 Berlin in MESZ
+    - cron: '30 22 * * *'    # 23:30 Berlin in MEZ
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: monstercount-daily
@@ -25,36 +28,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Cache laden
-        uses: actions/cache@v4
-        with:
-          path: data/
-          key: data-main-v2
-          restore-keys: |
-            data-main-
-
-      - name: Zufallswartezeit im Fenster 23:30 bis 23:50 Berlin
+      # Zufällige Startzeit nur bei Zeitplan
+      - name: Zufallswartezeit 23:30–23:50 Berlin
         if: github.event_name == 'schedule'
         run: |
           S=$(( RANDOM % 1201 ))
           echo "Sleep $S Sekunden"
           sleep $S
 
-      - name: Dry Run nur bei manueller Ausführung
+      # Bei manueller Ausführung NICHT posten, aber alles berechnen + committen
+      - name: NO_POST nur bei manueller Ausführung
         if: github.event_name == 'workflow_dispatch'
-        run: echo "DRY_RUN=1" >> "$GITHUB_ENV"
+        run: echo "NO_POST=1" >> "$GITHUB_ENV"
 
       - name: Daily ausführen
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           TZ: Europe/Berlin
-        run: |
-          python monstercount_tracker.py --mode daily
+        run: python monstercount_tracker.py --mode daily
 
-      - name: Data als Artifact bereitstellen bei manueller Ausführung
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: data-folder
-          path: data/
-          if-no-files-found: warn
+      - name: data/ committen
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ || true
+          git commit -m "chore(data): update after Daily ($GITHUB_RUN_ID)" || echo "nichts zu committen"
+          git push || echo "kein Push möglich"
