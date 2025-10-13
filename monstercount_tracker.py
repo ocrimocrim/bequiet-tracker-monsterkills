@@ -1,3 +1,4 @@
+# monstercount_tracker.py
 import os
 import sys
 import re
@@ -11,48 +12,44 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 
-# -------------------- Einstellungen --------------------
-
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
-# Feste Quellen
 RANKING_URL  = "https://pr-underworld.com/website/ranking/"
 MONSTER_URL  = "https://pr-underworld.com/website/monstercount/"
 HOMEPAGE_URL = "https://pr-underworld.com/website/"
 GUILD_NAME   = "beQuiet"
 
-# Zeitfenster (Berlin)
 BERLIN = ZoneInfo("Europe/Berlin")
-DAILY_START_MIN = 40    # 23:40
-DAILY_END_MIN   = 55    # 23:55 inkl.
+DAILY_START_MIN   = 40
+DAILY_END_MIN     = 55
+WEEKLY_START_MIN  = 30
+WEEKLY_END_MIN    = 50
+MONTHLY_START_MIN = 20
+MONTHLY_END_MIN   = 59
 
-WEEKLY_START_MIN = 30   # 23:30
-WEEKLY_END_MIN   = 50   # 23:50 inkl.
-
-MONTHLY_START_MIN = 20  # 23:20
-MONTHLY_END_MIN   = 59  # 23:59 inkl.
-
-# Dateien / Verzeichnisse im Repo
-REPO_DIR = Path(__file__).resolve().parent
-DATA_DIR = REPO_DIR / "data"
+REPO_DIR   = Path(__file__).resolve().parent
+DATA_DIR   = REPO_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+STATE_FILE = DATA_DIR / "state_monstercount.json"
 
-STATE_FILE = DATA_DIR / "state_monstercount.json"  # kumulierte Gildenwerte + Metadaten
-LOGS_DIR = DATA_DIR / "logs"                       # Tagesprotokolle (all/guild)
-LOCKS_DIR = DATA_DIR / "locks"                     # Sperren gegen Doppelposts
-for p in (LOGS_DIR, LOCKS_DIR):
+# strukturierte Ablage
+BQ_DIR        = DATA_DIR / "bequiet"
+BQ_DAILY_DIR  = BQ_DIR / "daily"
+BQ_WEEKLY_DIR = BQ_DIR / "weekly"
+BQ_MONTH_DIR  = BQ_DIR / "monthly"
+BQ_YEAR_DIR   = BQ_DIR / "yearly"
+ALLP_DIR      = DATA_DIR / "allplayers" / "daily"
+SNAP_DIR      = DATA_DIR / "snapshots"
+
+for p in [BQ_DAILY_DIR, BQ_WEEKLY_DIR, BQ_MONTH_DIR, BQ_YEAR_DIR, ALLP_DIR, SNAP_DIR]:
     p.mkdir(parents=True, exist_ok=True)
 
 MEMBERS_FILE = Path("members_bequiet.txt")
 SPRUCH_FILES = ["texts_monsterkills.txt", "Texts for Monsterkills.txt"]
 
-# Discord
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 MAX_LINES = 40
-DISCORD_SAFE_LIMIT = 1900  # Sicherheitskürzung unter 2000
-NO_POST = os.getenv("NO_POST", "") == "1"  # für Testläufe
-
-# -------------------- Hilfen --------------------
+DISCORD_SAFE_LIMIT = 1900
 
 def berlin_now() -> datetime:
     return datetime.now(timezone.utc).astimezone(BERLIN)
@@ -66,20 +63,6 @@ def end_of_month(dt: datetime) -> bool:
 def only_digits(text: str) -> int:
     nums = re.findall(r"\d+", text or "")
     return int("".join(nums)) if nums else 0
-
-def try_lock(prefix: str, key: str) -> bool:
-    """Atomare Sperre je Zeitraum. True = neu angelegt; False = existierte bereits."""
-    LOCKS_DIR.mkdir(parents=True, exist_ok=True)
-    path = LOCKS_DIR / f"{prefix}_{key}.lock"
-    try:
-        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(berlin_now().isoformat())
-        return True
-    except FileExistsError:
-        return False
-
-# -------------------- State --------------------
 
 def load_state() -> dict:
     if STATE_FILE.exists():
@@ -97,26 +80,20 @@ def load_state() -> dict:
 def save_state(state: dict):
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
-def save_daily_snapshot(state: dict, now_local: datetime):
-    snap = DATA_DIR / f"daily_{now_local.date().isoformat()}.json"
-    try:
-        snap.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as e:
-        print(f"Snapshot-Fehler {e}", file=sys.stderr)
+def save_json(path: Path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-# -------------------- Discord --------------------
+def save_daily_snapshot(state: dict, now_local: datetime):
+    snap = SNAP_DIR / f"daily_{now_local.date().isoformat()}.json"
+    save_json(snap, state)
 
 def post_discord(content: str):
-    if NO_POST:
-        print("NO_POST aktiv – kein Discord-Post. Inhalt (gekürzt):\n" + content[:400] + ("\n..." if len(content) > 400 else ""))
-        return
     if not DISCORD_WEBHOOK:
-        print("WARN: DISCORD_WEBHOOK fehlt – Ausgabe nur im Log\n" + content)
+        print("WARN DISCORD_WEBHOOK fehlt\n" + content)
         return
     r = requests.post(DISCORD_WEBHOOK, json={"content": content}, timeout=20)
     r.raise_for_status()
-
-# -------------------- HTML Utilities --------------------
 
 def get_soup(url: str) -> BeautifulSoup:
     r = requests.get(url, timeout=25)
@@ -128,8 +105,6 @@ def find_netherworld_table(soup: BeautifulSoup):
         if h.get_text(" ", strip=True).lower().startswith("netherworld"):
             return h.find_next("table")
     return None
-
-# -------------------- Mitglieder --------------------
 
 def load_members() -> dict:
     out = {}
@@ -159,14 +134,11 @@ def add_members(new_names: set[str]):
         save_members(mem)
     return added
 
-# -------------------- Parser: Ranking / Homepage --------------------
-
 def load_bequiet_names_from_ranking() -> set[str]:
     soup = get_soup(RANKING_URL)
     table = find_netherworld_table(soup)
     if not table:
-        raise RuntimeError("Ranking Netherworld-Tabelle nicht gefunden")
-
+        raise RuntimeError("Ranking Tabelle nicht gefunden")
     bequiet = set()
     tbody = table.find("tbody") or table
     for tr in tbody.find_all("tr"):
@@ -200,15 +172,11 @@ def load_bequiet_names_from_homepage() -> set[str]:
             out.add(name.strip())
     return out
 
-# -------------------- Parser: Monstercount --------------------
-
 def load_monstercount() -> list[tuple[str, int]]:
-    """SEMPER LIVE: lädt IMMER direkt die Website."""
     soup = get_soup(MONSTER_URL)
     table = find_netherworld_table(soup)
     if not table:
-        raise RuntimeError("Monstercount Netherworld-Tabelle nicht gefunden")
-
+        raise RuntimeError("Monstercount Tabelle nicht gefunden")
     out = []
     tbody = table.find("tbody") or table
     for tr in tbody.find_all("tr"):
@@ -221,8 +189,6 @@ def load_monstercount() -> list[tuple[str, int]]:
             out.append((name, kills))
     return out
 
-# -------------------- Aggregation / Format --------------------
-
 def iso_year_week(dt: datetime) -> str:
     y, w, _ = dt.isocalendar()
     return f"{y}-W{w:02d}"
@@ -231,21 +197,18 @@ def year_month(dt: datetime) -> str:
     return f"{dt.year}-{dt.month:02d}"
 
 def aggregate_into(state: dict, joined: list[tuple[str, int]], dt: datetime):
-    # weekly
     iw = iso_year_week(dt)
     if state["weekly"].get("year_week") != iw:
         state["weekly"] = {"year_week": iw, "kills": {}}
     for name, kills in joined:
         state["weekly"]["kills"][name] = state["weekly"]["kills"].get(name, 0) + kills
 
-    # monthly
     ym = year_month(dt)
     if state["monthly"].get("year_month") != ym:
         state["monthly"] = {"year_month": ym, "kills": {}}
     for name, kills in joined:
         state["monthly"]["kills"][name] = state["monthly"]["kills"].get(name, 0) + kills
 
-    # yearly
     y = str(dt.year)
     if state["yearly"].get("year") != y:
         state["yearly"] = {"year": y, "kills": {}}
@@ -258,7 +221,7 @@ def pick_spruch() -> str:
             lines = [ln.strip() for ln in Path(p).read_text(encoding="utf-8").splitlines() if ln.strip()]
             if lines:
                 return random.choice(lines)
-    return "The mobs fell, the loot rolled, and morale stayed high."
+    return "Die Netherworld hat gezittert. Weiter so."
 
 def format_ranking(title: str, entries: list[tuple[str, int]], spruch: str) -> str:
     header = f"**Netherworld {title} ({GUILD_NAME})**"
@@ -267,8 +230,8 @@ def format_ranking(title: str, entries: list[tuple[str, int]], spruch: str) -> s
     else:
         lines = []
         for i, (name, kills) in enumerate(entries[:MAX_LINES], start=1):
-            verb = "hunted" if i % 2 else "killed"
-            lines.append(f"{i}. **{name}** {verb} **{kills}** mobs")
+            verb = "hat gejagt" if i % 2 else "hat getilgt"
+            lines.append(f"{i}. **{name}** {verb} **{kills}**")
         msg = f"{header}\n{spruch}\n\n" + "\n".join(lines)
 
     if len(msg) <= DISCORD_SAFE_LIMIT:
@@ -287,29 +250,6 @@ def format_ranking(title: str, entries: list[tuple[str, int]], spruch: str) -> s
             high = mid - 1
     return f"{header}\n{spruch}\n\n{best}"
 
-# -------------------- Logs --------------------
-
-def write_daily_logs(now_local: datetime, all_counts: list[tuple[str, int]], guild_counts: list[tuple[str, int]]):
-    y = f"{now_local.year:04d}"
-    m = f"{now_local.month:02d}"
-    d = f"{now_local.day:02d}"
-    base = LOGS_DIR / y / m
-    base.mkdir(parents=True, exist_ok=True)
-
-    all_sorted = sorted(all_counts, key=lambda x: x[1], reverse=True)
-    guild_sorted = sorted(guild_counts, key=lambda x: x[1], reverse=True)
-
-    (base / f"{d}_all.json").write_text(
-        json.dumps({n: k for n, k in all_sorted}, ensure_ascii=False, indent=2),
-        encoding="utf-8"
-    )
-    (base / f"{d}_guild.json").write_text(
-        json.dumps({n: k for n, k in guild_sorted}, ensure_ascii=False, indent=2),
-        encoding="utf-8"
-    )
-
-# -------------------- Runs --------------------
-
 def run_homepage_scan(now_local: datetime):
     if now_local.hour not in {10, 18, 21}:
         return
@@ -317,62 +257,72 @@ def run_homepage_scan(now_local: datetime):
         found = load_bequiet_names_from_homepage()
         added = add_members(found)
         if added:
-            post_discord("🧭 Neue beQuiet-Namen von der Homepage aufgenommen\n" + ", ".join(sorted(added)))
+            post_discord("Neue beQuiet Namen wurden aufgenommen\n" + ", ".join(sorted(added)))
     except Exception as e:
-        print(f"Homepage-Scan Fehler: {e}", file=sys.stderr)
+        print(f"Homepage Scan Fehler {e}", file=sys.stderr)
+
+def write_bq_daily_json(now_local: datetime, joined: list[tuple[str, int]]):
+    y = f"{now_local.year:04d}"
+    m = f"{now_local.month:02d}"
+    d = f"{now_local.day:02d}"
+    payload = {"date": now_local.date().isoformat(), "guild": GUILD_NAME, "kills": dict(joined)}
+    save_json(BQ_DAILY_DIR / y / m / f"{d}.json", payload)
+
+def write_weekly_json(state: dict):
+    wk = state["weekly"]["year_week"]
+    kills_map = state["weekly"]["kills"]
+    save_json(BQ_WEEKLY_DIR / f"{wk}.json", {"year_week": wk, "guild": GUILD_NAME, "kills": kills_map})
+
+def write_monthly_json(state: dict):
+    ym = state["monthly"]["year_month"]
+    kills_map = state["monthly"]["kills"]
+    save_json(BQ_MONTH_DIR / f"{ym}.json", {"year_month": ym, "guild": GUILD_NAME, "kills": kills_map})
+
+def write_yearly_json(state: dict):
+    y = state["yearly"]["year"]
+    kills_map = state["yearly"]["kills"]
+    save_json(BQ_YEAR_DIR / f"{y}.json", {"year": y, "guild": GUILD_NAME, "kills": kills_map})
 
 def run_daily(state: dict, now_local: datetime):
     today = now_local.date().isoformat()
-
-    # Fenster und Doppel-Post-Schutz (Lock zuerst!)
     if not is_in_window(now_local, DAILY_START_MIN, DAILY_END_MIN):
-        print(f"Außerhalb Daily-Fenster {now_local:%H:%M}", file=sys.stderr)
-        return
-    if not try_lock("daily", today):
-        print(f"Daily-Lock existiert bereits für {today} – beende.", file=sys.stderr)
         return
     if state.get("last_daily_date") == today:
-        print(f"Heute schon gepostet {today}", file=sys.stderr)
         return
 
-    # Gildenmenge aktualisieren (Ranking + members.txt)
     bequiet_ranking = {n.lower() for n in load_bequiet_names_from_ranking()}
     members_map = load_members()
     bequiet_all = set(members_map.keys()) | bequiet_ranking
+    all_counts = load_monstercount()
 
-    # IMMER live von der Website:
-    all_counts = load_monstercount()  # Liste[(Name, Kills)] für alle Spieler
-
-    # Gildenfilter für Post & Aggregation
     joined = [(n, k) for (n, k) in all_counts if n.lower() in bequiet_all and k > 0]
     joined.sort(key=lambda x: x[1], reverse=True)
 
-    # Protokolle schreiben (alle & gilde)
-    write_daily_logs(now_local, all_counts, joined)
-
-    # Post für die Gilde
     spruch = pick_spruch()
     msg = format_ranking("Daily Monstercount", joined, spruch)
     post_discord(msg)
 
-    # Kumulieren für Woche/Monat/Jahr (nur Gilde)
     aggregate_into(state, joined, now_local)
     state["last_daily_date"] = today
     save_state(state)
     save_daily_snapshot(state, now_local)
+
+    write_bq_daily_json(now_local, joined)
+    write_weekly_json(state)
+    write_monthly_json(state)
+    write_yearly_json(state)
 
 def run_weekly(state: dict, now_local: datetime):
     if now_local.isoweekday() != 7:
         return
     if not is_in_window(now_local, WEEKLY_START_MIN, WEEKLY_END_MIN):
         return
-
     wk = state.get("weekly", {})
     kills_map = wk.get("kills", {})
     ranking = sorted(kills_map.items(), key=lambda x: x[1], reverse=True)
     spruch = pick_spruch()
-    post_discord(format_ranking(f"🗓️ Weekly Monstercount {wk.get('year_week','')}", ranking, spruch))
-
+    post_discord(format_ranking(f"Weekly Monstercount {wk.get('year_week','')}", ranking, spruch))
+    write_weekly_json(state)
     next_week = (now_local + timedelta(days=1))
     state["weekly"] = {"year_week": iso_year_week(next_week), "kills": {}}
     save_state(state)
@@ -382,13 +332,12 @@ def run_monthly(state: dict, now_local: datetime):
         return
     if not is_in_window(now_local, MONTHLY_START_MIN, MONTHLY_END_MIN):
         return
-
     mm = state.get("monthly", {})
     kills_map = mm.get("kills", {})
     ranking = sorted(kills_map.items(), key=lambda x: x[1], reverse=True)
-    spruch = pick_spruch()
-    post_discord(format_ranking(f"📅 Monthly Monstercount {mm.get('year_month','')}", ranking, spruch))
-
+    spruch = "Die Kalendermonat Jagd ist entschieden. Starke Runde."
+    post_discord(format_ranking(f"Monthly Monstercount {mm.get('year_month','')}", ranking, spruch))
+    write_monthly_json(state)
     first_next_month = (now_local.replace(day=1) + timedelta(days=32)).replace(day=1)
     state["monthly"] = {"year_month": year_month(first_next_month), "kills": {}}
     save_state(state)
@@ -398,24 +347,33 @@ def run_yearly(state: dict, now_local: datetime):
         return
     if not is_in_window(now_local, 0, 59):
         return
-
     yr = state.get("yearly", {})
     kills_map = yr.get("kills", {})
     ranking = sorted(kills_map.items(), key=lambda x: x[1], reverse=True)
-    spruch = pick_spruch()
-    post_discord(format_ranking(f"🏆 Yearly Monstercount {yr.get('year','')}", ranking, spruch))
-
+    spruch = "Das Jahr endet mit Glanz. GG an das beQuiet Team."
+    post_discord(format_ranking(f"Yearly Monstercount {yr.get('year','')}", ranking, spruch))
+    write_yearly_json(state)
     next_year = now_local.year + 1
     state["yearly"] = {"year": str(next_year), "kills": {}}
     save_state(state)
 
-# -------------------- Main --------------------
+def run_archive_allplayers(now_local: datetime):
+    if not is_in_window(now_local, 30, 55):
+        return
+    all_counts = load_monstercount()
+    y = f"{now_local.year:04d}"
+    m = f"{now_local.month:02d}"
+    d = f"{now_local.day:02d}"
+    payload = {"date": now_local.date().isoformat(), "kills": dict(all_counts)}
+    save_json(ALLP_DIR / y / m / f"{d}.json", payload)
 
 def main():
+    mode = os.getenv("MODE", "normal")
     state = load_state()
     now_local = berlin_now()
-    print(f"State-Datei Pfad {STATE_FILE.resolve()}", file=sys.stderr)
-
+    if mode == "archive_all":
+        run_archive_allplayers(now_local)
+        return
     run_homepage_scan(now_local)
     run_daily(state, now_local)
     run_weekly(state, now_local)
@@ -426,7 +384,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        err = f"⚠️ Monstercount-Tracker Fehler {e}"
+        err = f"Tracker Fehler {e}"
         print(err, file=sys.stderr)
         try:
             post_discord(err)
