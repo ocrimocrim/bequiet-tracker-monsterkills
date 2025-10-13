@@ -1,0 +1,27 @@
+name: monstercount-archive-allplayers
+on:
+  schedule:
+    - cron: "*/5 20-23 * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - env:
+          MODE: archive_all
+        run: python monstercount_tracker.py
+      - name: Commit archive
+        run: |
+          git config user.name "monstercount-bot"
+          git config user.email "bot@example.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "archive all players daily"
+          git push
