@@ -1,53 +1,26 @@
-name: Monstercount Weekly
-
+name: monstercount-weekly
 on:
   schedule:
-    - cron: '30 21 * * 0'    # Sonntag 23:30 Berlin in MESZ
-    - cron: '30 22 * * 0'    # Sonntag 23:30 Berlin in MEZ
+    - cron: "*/5 20-23 * * 0"
   workflow_dispatch:
-
-permissions:
-  contents: write
-
-concurrency:
-  group: monstercount-weekly
-  cancel-in-progress: true
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Abhängigkeiten installieren
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Zufallswartezeit 23:30–23:50 (nur schedule)
-        if: github.event_name == 'schedule'
-        run: |
-          S=$(( RANDOM % 1201 ))
-          echo "Sleep $S Sekunden"
-          sleep $S
-
-      - name: NO_POST für manuelle Runs
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "NO_POST=1" >> "$GITHUB_ENV"
-
-      - name: Tracker ausführen (Weekly wird intern erkannt)
-        env:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: python monstercount_tracker.py
-
-      - name: data/ committen
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/ || true
-          git commit -m "chore(data): update after Weekly run ($GITHUB_RUN_ID)" || echo "nichts zu committen"
-          git push || echo "kein Push möglich (Branchschutz?)"
+      - run: |
+          git config user.name "monstercount-bot"
+          git config user.email "bot@example.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "weekly rollup"
+          git push
