@@ -24,6 +24,8 @@ jobs:
           pip install beautifulsoup4 requests
 
       - name: Members Sync ausführen
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           python members_sync.py
 
@@ -32,5 +34,5 @@ jobs:
           git config user.name "bequiet-bot"
           git config user.email "bot@example.com"
           git add members_bequiet.txt
-          git diff --cached --quiet || git commit -m "Auto members sync"
+          git diff --cached --quiet || git commit -m "Auto members sync add-only"
           git push
