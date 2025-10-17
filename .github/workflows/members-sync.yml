@@ -1,0 +1,36 @@
+name: beQuiet members sync
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install beautifulsoup4 requests
+
+      - name: Members Sync ausführen
+        run: |
+          python members_sync.py
+
+      - name: Änderungen committen
+        run: |
+          git config user.name "bequiet-bot"
+          git config user.email "bot@example.com"
+          git add members_bequiet.txt
+          git diff --cached --quiet || git commit -m "Auto members sync"
+          git push
