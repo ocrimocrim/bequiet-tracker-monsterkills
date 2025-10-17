@@ -5,6 +5,11 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+# Sperre für parallele Läufe
+concurrency:
+  group: bequiet-members-sync
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
