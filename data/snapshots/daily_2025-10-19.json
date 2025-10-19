@@ -1,8 +1,26 @@
 {
   "last_daily_date": "2025-10-19",
   "weekly": {
-    "year_week": "2025-W43",
-    "kills": {}
+    "year_week": "2025-W42",
+    "kills": {
+      "Albert": 34628,
+      "marryme": 34225,
+      "FarmerJoe": 26117,
+      "Yuiy": 16866,
+      "Falkenauge": 13312,
+      "Beef": 9761,
+      "Godlike": 6117,
+      "WannaHaveItAll": 5613,
+      "Endorphin": 5318,
+      "GeorgeDroid": 4830,
+      "ErsteKlasse": 3800,
+      "Chat": 2916,
+      "Auralion": 2767,
+      "Gumba": 1035,
+      "Manamy": 1015,
+      "Nalah": 427,
+      "Iverine": 357
+    }
   },
   "monthly": {
     "year_month": "2025-10",
