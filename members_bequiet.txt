@@ -26,6 +26,7 @@ evermore
 EverNight
 Falkenauge
 FarmerJoe
+GeorgeDroid
 GeorgeFloyd
 Godlike
 Grez
