@@ -1,8 +1,34 @@
 {
   "last_daily_date": "2025-10-26",
   "weekly": {
-    "year_week": "2025-W44",
-    "kills": {}
+    "year_week": "2025-W43",
+    "kills": {
+      "marryme": 44701,
+      "GeorgeDroid": 37469,
+      "Duweiss": 21042,
+      "AntsInThePants": 10837,
+      "Kosabi": 10446,
+      "Auralion": 10079,
+      "WannaHaveItAll": 8902,
+      "Kweekmachine": 5952,
+      "ErsteKlasse": 5755,
+      "Albert": 5122,
+      "Beef": 4376,
+      "Yuiy": 4293,
+      "Endorphin": 4287,
+      "Soup": 3995,
+      "Litus": 3819,
+      "Schwanger": 3804,
+      "Rojana": 3481,
+      "Sunraku": 2895,
+      "Roots": 2852,
+      "Chat": 1850,
+      "Nalah": 1820,
+      "Iverine": 1717,
+      "Beater": 1441,
+      "Undine": 1266,
+      "T1tan": 861
+    }
   },
   "monthly": {
     "year_month": "2025-10",
