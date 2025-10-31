@@ -47,8 +47,37 @@
     }
   },
   "monthly": {
-    "year_month": "2025-11",
-    "kills": {}
+    "year_month": "2025-10",
+    "kills": {
+      "marryme": 35739,
+      "GeorgeDroid": 31195,
+      "Albert": 26504,
+      "FarmerJoe": 24552,
+      "Beef": 21103,
+      "Thaito": 12709,
+      "Rojana": 8816,
+      "Auralion": 8564,
+      "WannaHaveItAll": 8334,
+      "Kosabi": 8139,
+      "Schwanger": 7114,
+      "Nalah": 6778,
+      "Manamy": 5874,
+      "HookahHunter": 2302,
+      "Diaz": 2099,
+      "Stride": 2086,
+      "Hauge": 1919,
+      "AntsInThePants": 1687,
+      "Grindr": 1650,
+      "Sunraku": 1587,
+      "Chat": 1529,
+      "Litus": 1488,
+      "Xless": 918,
+      "Undine": 875,
+      "Iverine": 693,
+      "ErsteKlasse": 691,
+      "PrettyBlue": 670,
+      "Beater": 649
+    }
   },
   "yearly": {
     "year": "2025",
