@@ -79,6 +79,7 @@ Stride
 Sunraku
 Suppenkelle
 T1tan
+Tamr
 Tank
 Tempest
 Thaito
