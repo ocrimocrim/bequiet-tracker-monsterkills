@@ -1,8 +1,31 @@
 {
   "last_daily_date": "2025-11-02",
   "weekly": {
-    "year_week": "2025-W45",
-    "kills": {}
+    "year_week": "2025-W44",
+    "kills": {
+      "marryme": 48215,
+      "GeorgeDroid": 39781,
+      "Albert": 35022,
+      "FarmerJoe": 20084,
+      "Beef": 15312,
+      "Litus": 6324,
+      "Schwanger": 5065,
+      "Duweiss": 4992,
+      "Kosabi": 4929,
+      "Beater": 4832,
+      "Soup": 3888,
+      "Grindr": 3336,
+      "T1tan": 3251,
+      "Hauge": 2972,
+      "Sunraku": 1178,
+      "Tamr": 1097,
+      "Xless": 908,
+      "HookahHunter": 872,
+      "Diaz": 864,
+      "Auralion": 708,
+      "AntsInThePants": 580,
+      "Nalah": 534
+    }
   },
   "monthly": {
     "year_month": "2025-11",
