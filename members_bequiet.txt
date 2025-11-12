@@ -18,6 +18,7 @@ Briefkarsten
 Chat
 Codeina
 Cranberro
+darkmagic
 Davies
 deadlyshine
 detox
@@ -94,6 +95,7 @@ T1tan
 Tamr
 Tank
 Tempest
+TerroBraut
 Thaito
 Tiri
 Tookie
