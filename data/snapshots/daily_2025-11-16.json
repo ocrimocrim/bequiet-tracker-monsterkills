@@ -1,8 +1,35 @@
 {
   "last_daily_date": "2025-11-16",
   "weekly": {
-    "year_week": "2025-W47",
-    "kills": {}
+    "year_week": "2025-W46",
+    "kills": {
+      "GeorgeDroid": 33795,
+      "marryme": 21487,
+      "AntsInThePants": 15016,
+      "Albert": 14588,
+      "Beater": 10875,
+      "Endorphin": 8959,
+      "Hauge": 5659,
+      "Schwanger": 4747,
+      "Manamy": 4545,
+      "Rojana": 4354,
+      "Hope": 3607,
+      "Tookie": 3039,
+      "Grindr": 2975,
+      "OgGacek": 2788,
+      "Hurricane": 2577,
+      "Sunraku": 2439,
+      "ErsteKlasse": 1643,
+      "Tiri": 1202,
+      "SumseBiene": 1136,
+      "Auralion": 353,
+      "Bersey": 202,
+      "Xless": 197,
+      "Quark": 93,
+      "T1tan": 44,
+      "Neuer": 20,
+      "Pusteblume": 1
+    }
   },
   "monthly": {
     "year_month": "2025-11",
