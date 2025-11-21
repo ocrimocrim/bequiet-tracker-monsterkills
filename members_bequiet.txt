@@ -36,6 +36,7 @@ Error
 ErsteKlasse
 evermore
 EverNight
+Evoken
 EwilMahsen
 Exact
 Falkenauge
