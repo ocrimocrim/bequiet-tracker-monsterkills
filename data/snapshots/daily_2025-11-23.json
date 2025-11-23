@@ -1,8 +1,30 @@
 {
   "last_daily_date": "2025-11-23",
   "weekly": {
-    "year_week": "2025-W48",
-    "kills": {}
+    "year_week": "2025-W47",
+    "kills": {
+      "Endorphin": 24133,
+      "GeorgeDroid": 23434,
+      "marryme": 20712,
+      "Hauge": 17312,
+      "T1tan": 12652,
+      "Schwanger": 10247,
+      "Evoken": 4160,
+      "Beater": 1753,
+      "SoloDingens": 1530,
+      "Manamy": 1185,
+      "Albert": 655,
+      "Sunraku": 400,
+      "Grindr": 244,
+      "Slayr": 138,
+      "Litus": 110,
+      "Kosabi": 106,
+      "Rojana": 62,
+      "xiNN": 41,
+      "Hafren": 14,
+      "Livi": 9,
+      "Algiz": 1
+    }
   },
   "monthly": {
     "year_month": "2025-11",
